@@ -1,0 +1,6 @@
+.idea/
+
+# let's not commit those ;)
+*.log
+*.log.*
+*.xml
