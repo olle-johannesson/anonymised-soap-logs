@@ -1,0 +1,37 @@
+# Exclude Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment folders
+venv/
+.env/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Docker and Compose files (if not needed in the image)
+**/Dockerfile*
+**/docker-compose*.yml
+
+# IDE and OS metadata
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Logs and temp files
+*.log
+*.tmp
+
+# Secrets and environment files
+*.env
+secrets.yml
+
+# Exclude extracted or output data
+*.xml
+*.json
+*.txt
