@@ -5,7 +5,8 @@ A small toolkit for extracting SOAP `<Body>` fragments from Java Spring log file
 ## Features
 
 - **Extract**: scans logs for `<soapenv:Envelope>` blocks and pretty-prints the inner `<soapenv:Body>` XML.
-    - Optional namespace filter: only output bodies containing the given namespace, or omit the filter to extract all bodies.
+    - Optional namespace filter: only output envelopes containing the given namespace, or omit the filter to extract all envelopes.
+    - `-b/--body-only` flag: extract only the `<soapenv:Body>` content instead of the full Envelope.
 - **Anonymize**: replaces PII leaf fields (names, addresses, dates, etc.) with consistent, realistic fake data (German locale) via [Faker](https://faker.readthedocs.io/).
 - **Piped or standalone**: two scripts (`extract_soap_bodies.py`, `anonymize_fragments.py`) that you can chain on the command line or run independently.
 - **Dockerized**: single `soaptool` image, no local Python or dependencies required.
@@ -35,31 +36,61 @@ docker build -t soaptool .
 ```
 Usage
 
-Extract only
+### Extract only
 
-Script usage (filter by namespace)
+#### Script usage (full Envelope, filter by namespace)
 ```bash
 cat spring.log \
   | python3 extract_soap_bodies.py -n http://big.arvato-infoscore.de \
+  > extracted_envelopes.xml
+```
+
+#### Script usage (only Body, filter by namespace)
+```bash
+cat spring.log \
+  | python3 extract_soap_bodies.py -b -n http://big.arvato-infoscore.de \
   > extracted_bodies.xml
 ```
-Script usage (no namespace filter)
+
+#### Script usage (full Envelope, no namespace filter)
 ```bash
 cat spring.log \
   | python3 extract_soap_bodies.py \
+  > all_envelopes.xml
+```
+
+#### Script usage (only Body, no namespace filter)
+```bash
+cat spring.log \
+  | python3 extract_soap_bodies.py -b \
   > all_bodies.xml
 ```
 Docker usage (filter by namespace)
+#### Docker usage (full Envelope, filter by namespace)
 ```bash
 cat spring.log \
-  | docker run --rm -i -v "$PWD":/data soaptool extract \
-      --namespace http://big.arvato-infoscore.de \
+  | docker run --rm -i -v "$PWD":/data soaptool extract -n http://big.arvato-infoscore.de \
+  > extracted_envelopes.xml
+```
+
+#### Docker usage (only Body, filter by namespace)
+```bash
+cat spring.log \
+  | docker run --rm -i -v "$PWD":/data soaptool extract -b -n http://big.arvato-infoscore.de \
   > extracted_bodies.xml
 ```
-Docker usage (no namespace filter)
+
+#### Docker usage (full Envelope, no namespace filter)
 ```bash
 cat spring.log \
   | docker run --rm -i -v "$PWD":/data soaptool extract \
+  > all_envelopes.xml
+```
+
+#### Docker usage (only Body, no namespace filter)
+```bash
+cat spring.log \
+  | docker run --rm -i -v "$PWD":/data soaptool extract -b \
   > all_bodies.xml
 ```
 Anonymize only
@@ -78,10 +109,18 @@ cat extracted_bodies.xml \
 ```
 Full pipeline
 
-Script pipeline
+#### Script pipeline (full Envelope then anonymize)
 ```bash
 cat spring.log \
   | python3 extract_soap_bodies.py -n http://big.arvato-infoscore.de \
+  | python3 anonymize_fragments.py \
+  > anonymized_bodies.xml
+```
+
+#### Script pipeline (only Body then anonymize)
+```bash
+cat spring.log \
+  | python3 extract_soap_bodies.py -b -n http://big.arvato-infoscore.de \
   | python3 anonymize_fragments.py \
   > anonymized_bodies.xml
 ```
@@ -99,4 +138,3 @@ Configuration
 License
 
 This project is licensed under the MIT License. See LICENSE for details.
-

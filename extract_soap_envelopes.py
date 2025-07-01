@@ -37,6 +37,27 @@ def scrub_header(envelope_xml: str) -> str:
         envelope_xml
     )
 
+# Tag expression for SOAP Body
+BODY_TAG = f"{{{SOAP_NS}}}Body"
+
+def extract_body(envelope_xml: str, target_ns: str|None) -> str | None:
+    """
+    Extract only the inner SOAP Body content, optionally filtering by namespace.
+    """
+    # Skip if namespace filter provided and not present
+    if target_ns and target_ns not in envelope_xml:
+        return None
+    try:
+        root = ET.fromstring(envelope_xml)
+        body = root.find(f".//{BODY_TAG}")
+        if body is None:
+            return None
+        # Serialize body children
+        inner = "".join(ET.tostring(child, encoding="unicode") for child in body)
+        return pretty_print(inner)
+    except ET.ParseError:
+        return None
+
 def pretty_print(xml_str: str) -> str:
     """Indent XML nicely, stripping a temporary wrapper."""
     try:
@@ -76,6 +97,11 @@ def main():
         "-n","--namespace",
         help="Only extract envelopes containing this namespace. Omit to extract all."
     )
+    p.add_argument(
+        "-b", "--body-only",
+        action="store_true",
+        help="Only extract SOAP Body content (default extracts full Envelope)"
+    )
     args = p.parse_args()
 
     data = sys.stdin.read()
@@ -85,11 +111,16 @@ def main():
     count = 0
     for match in ENVELOPE_RE.finditer(data):
         env = match.group(0)
-        envelope_xml = extract_envelope(env, args.namespace)
-        if envelope_xml:
+        if args.body_only:
+            result = extract_body(env, args.namespace)
+            label = "SOAP BODY"
+        else:
+            result = extract_envelope(env, args.namespace)
+            label = "SOAP ENVELOPE"
+        if result:
             count += 1
-            print(f"\n<!-- SOAP ENVELOPE #{count} -->")
-            print(envelope_xml)
+            print(f"\n<!-- {label} #{count} -->")
+            print(result)
 
     if count == 0:
         sys.exit(1)  # no matches (useful in scripts to detect “nothing found”)
