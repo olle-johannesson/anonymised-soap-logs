@@ -2,22 +2,22 @@
 """
 extract_soap_bodies.py
 
-Extract and pretty-print SOAP <Body> blocks from logs.
-If a namespace is supplied, only bodies containing that namespace are kept.
-If no namespace is supplied, all bodies are extracted.
+Extract and pretty-print SOAP Envelope blocks from logs.
+If a namespace is supplied, only envelopes containing that namespace are kept.
+If no namespace is supplied, all envelopes are extracted.
 
 Reads from stdin, writes to stdout.
 
 Usage:
-  # extract only bodies containing the BIG namespace
+  # extract only envelopes containing the BIG namespace
   cat spring.log \
     | python3 extract_soap_bodies.py -n http://big.arvato-infoscore.de \
     > extracted.xml
 
-  # extract all bodies, regardless of namespace
+  # extract all envelopes, regardless of namespace
   cat spring.log \
     | python3 extract_soap_bodies.py \
-    > all_bodies.xml
+    > all_envelopes.xml
 """
 import sys
 import re
@@ -27,8 +27,15 @@ import xml.dom.minidom as minidom
 
 # Patterns
 SOAP_NS     = "http://schemas.xmlsoap.org/soap/envelope/"
-BODY_TAG    = f"{{{SOAP_NS}}}Body"
 ENVELOPE_RE = re.compile(r"<soapenv:Envelope.*?</soapenv:Envelope>", re.DOTALL|re.IGNORECASE)
+HEADER_RE = re.compile(r"(<soapenv:Header.*?>)(.*?)(</soapenv:Header>)", re.DOTALL | re.IGNORECASE)
+
+def scrub_header(envelope_xml: str) -> str:
+    """Keep Header tags but redact their inner contents."""
+    return HEADER_RE.sub(
+        lambda m: f"{m.group(1)}\n  <!-- HEADER REDACTED -->\n{m.group(3)}",
+        envelope_xml
+    )
 
 def pretty_print(xml_str: str) -> str:
     """Indent XML nicely, stripping a temporary wrapper."""
@@ -46,36 +53,28 @@ def pretty_print(xml_str: str) -> str:
     except Exception:
         return xml_str.strip()
 
-def extract_inner_body(envelope_xml: str, target_ns: str|None) -> str|None:
+def extract_envelope(envelope_xml: str, target_ns: str|None) -> str | None:
     """
-    Parse the Envelope block, find <soapenv:Body>, and:
-    - if target_ns is None → always return its inner XML
-    - else → only if target_ns appears in the block
-    Returns pretty-printed inner XML or None.
+    Return the full SOAP envelope (minus headers),
+    optionally filtering by namespace. Returns None if filtered out.
     """
-    try:
-        root = ET.fromstring(envelope_xml)
-        body = root.find(f".//{BODY_TAG}")
-        if body is None:
-            return None
-
-        # If a filter namespace was provided, skip blocks that don't contain it
-        if target_ns and target_ns not in envelope_xml:
-            return None
-
-        # Serialize all children of <Body>
-        inner = "".join(ET.tostring(child, encoding="unicode") for child in body)
-        return pretty_print(inner)
-    except ET.ParseError:
+    # Skip if a namespace filter is provided and not present
+    if target_ns and target_ns not in envelope_xml:
         return None
+
+    # scrub sensitive header contents, preserve Header tags for mocking
+    scrubbed = scrub_header(envelope_xml)
+
+    # Pretty-print the entire envelope for readability
+    return pretty_print(scrubbed)
 
 def main():
     p = argparse.ArgumentParser(
-        description="Extract SOAP <Body> blocks, optionally filtering by namespace."
+        description="Extract SOAP Envelope blocks, optionally filtering by namespace."
     )
     p.add_argument(
         "-n","--namespace",
-        help="Only extract bodies containing this namespace. Omit to extract all."
+        help="Only extract envelopes containing this namespace. Omit to extract all."
     )
     args = p.parse_args()
 
@@ -86,11 +85,11 @@ def main():
     count = 0
     for match in ENVELOPE_RE.finditer(data):
         env = match.group(0)
-        body_xml = extract_inner_body(env, args.namespace)
-        if body_xml:
+        envelope_xml = extract_envelope(env, args.namespace)
+        if envelope_xml:
             count += 1
-            print(f"\n<!-- SOAP BODY #{count} -->")
-            print(body_xml)
+            print(f"\n<!-- SOAP ENVELOPE #{count} -->")
+            print(envelope_xml)
 
     if count == 0:
         sys.exit(1)  # no matches (useful in scripts to detect “nothing found”)
