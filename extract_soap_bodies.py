@@ -1,64 +1,95 @@
 #!/usr/bin/env python3
 """
-Extract and pretty-print SOAP <Body> content from logs that contain a given XML namespace.
+extract_soap_bodies.py
+
+Extract and pretty-print SOAP <Body> blocks from logs.
+If a namespace is supplied, only bodies containing that namespace are kept.
+If no namespace is supplied, all bodies are extracted.
+
 Reads from stdin, writes to stdout.
 
 Usage:
-    cat spring.log | python3 extract_soap_bodies.py http://big.arvato-infoscore.de
-"""
+  # extract only bodies containing the BIG namespace
+  cat spring.log \
+    | python3 extract_soap_bodies.py -n http://big.arvato-infoscore.de \
+    > extracted.xml
 
+  # extract all bodies, regardless of namespace
+  cat spring.log \
+    | python3 extract_soap_bodies.py \
+    > all_bodies.xml
+"""
 import sys
 import re
+import argparse
 import xml.etree.ElementTree as ET
 import xml.dom.minidom as minidom
 
-SOAP_NS = "http://schemas.xmlsoap.org/soap/envelope/"
-BODY_TAG = f"{{{SOAP_NS}}}Body"
-ENVELOPE_RE = re.compile(r"<soapenv:Envelope.*?</soapenv:Envelope>", re.DOTALL | re.IGNORECASE)
-
-def extract_inner_body(xml_block: str, target_ns: str) -> str:
-    """Extract and return pretty-printed inner XML inside <soapenv:Body>."""
-    try:
-        root = ET.fromstring(xml_block)
-        body = root.find(f".//{BODY_TAG}")
-        if body is not None and target_ns in xml_block:
-            inner = "".join(ET.tostring(e, encoding="unicode") for e in body)
-            return pretty_print(inner)
-    except ET.ParseError:
-        pass
-    return None
+# Patterns
+SOAP_NS     = "http://schemas.xmlsoap.org/soap/envelope/"
+BODY_TAG    = f"{{{SOAP_NS}}}Body"
+ENVELOPE_RE = re.compile(r"<soapenv:Envelope.*?</soapenv:Envelope>", re.DOTALL|re.IGNORECASE)
 
 def pretty_print(xml_str: str) -> str:
-    """Indent XML nicely."""
+    """Indent XML nicely, stripping a temporary wrapper."""
     try:
-        parsed = minidom.parseString(f"<wrap>{xml_str}</wrap>")
-        pretty = "\n".join(
-            line for line in parsed.toprettyxml(indent="  ").splitlines()
-            if line.strip() and "<wrap>" not in line and "</wrap>" not in line
-        )
-        return pretty
+        doc = minidom.parseString(f"<wrap>{xml_str}</wrap>")
+        lines = []
+        for ln in doc.toprettyxml(indent="  ").splitlines():
+            if ln.strip() and not ln.strip().startswith("<wrap>"):
+                lines.append(ln)
+        return "\n".join(lines)
     except Exception:
         return xml_str.strip()
 
-def main():
-    if len(sys.argv) != 2:
-        print("Usage: extract_soap_bodies.py <namespace>", file=sys.stderr)
-        sys.exit(1)
+def extract_inner_body(envelope_xml: str, target_ns: str|None) -> str|None:
+    """
+    Parse the Envelope block, find <soapenv:Body>, and:
+    - if target_ns is None → always return its inner XML
+    - else → only if target_ns appears in the block
+    Returns pretty-printed inner XML or None.
+    """
+    try:
+        root = ET.fromstring(envelope_xml)
+        body = root.find(f".//{BODY_TAG}")
+        if body is None:
+            return None
 
-    target_ns = sys.argv[1]
-    log_data = sys.stdin.read()
+        # If a filter namespace was provided, skip blocks that don't contain it
+        if target_ns and target_ns not in envelope_xml:
+            return None
+
+        # Serialize all children of <Body>
+        inner = "".join(ET.tostring(child, encoding="unicode") for child in body)
+        return pretty_print(inner)
+    except ET.ParseError:
+        return None
+
+def main():
+    p = argparse.ArgumentParser(
+        description="Extract SOAP <Body> blocks, optionally filtering by namespace."
+    )
+    p.add_argument(
+        "-n","--namespace",
+        help="Only extract bodies containing this namespace. Omit to extract all."
+    )
+    args = p.parse_args()
+
+    data = sys.stdin.read()
+    if not data.strip():
+        sys.exit(0)
+
     count = 0
-    print("Target namespace", target_ns)
-    for match in ENVELOPE_RE.finditer(log_data):
-        xml_block = match.group(0)
-        body = extract_inner_body(xml_block, target_ns)
-        if body:
+    for match in ENVELOPE_RE.finditer(data):
+        env = match.group(0)
+        body_xml = extract_inner_body(env, args.namespace)
+        if body_xml:
             count += 1
             print(f"\n<!-- SOAP BODY #{count} -->")
-            print(body)
+            print(body_xml)
 
     if count == 0:
-        print("No matching SOAP bodies found.", file=sys.stderr)
+        sys.exit(1)  # no matches (useful in scripts to detect “nothing found”)
 
 if __name__ == "__main__":
     main()
