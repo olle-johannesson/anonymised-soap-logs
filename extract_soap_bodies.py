@@ -34,10 +34,14 @@ def pretty_print(xml_str: str) -> str:
     """Indent XML nicely, stripping a temporary wrapper."""
     try:
         doc = minidom.parseString(f"<wrap>{xml_str}</wrap>")
+        pretty_xml = doc.toprettyxml(indent="  ")
         lines = []
-        for ln in doc.toprettyxml(indent="  ").splitlines():
-            if ln.strip() and not ln.strip().startswith("<wrap>"):
-                lines.append(ln)
+        for ln in pretty_xml.splitlines():
+            s = ln.strip()
+            # skip any wrapper tag, opening or closing
+            if not s or s.startswith("<wrap") or s.startswith("</wrap"):
+                continue
+            lines.append(ln)
         return "\n".join(lines)
     except Exception:
         return xml_str.strip()
